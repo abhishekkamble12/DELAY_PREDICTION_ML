@@ -213,7 +213,7 @@ st.markdown("""
 # ---------------------------------------------------------
 # 2. Load Model Logic
 # ---------------------------------------------------------
-MODEL_FILENAME = 'my_model.pkl'
+MODEL_FILENAME = 'my_modelss.pkl'
 MODEL_PATH = os.path.join(os.path.dirname(__file__), MODEL_FILENAME)
 
 @st.cache_resource
