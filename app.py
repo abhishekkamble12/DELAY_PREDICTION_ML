@@ -174,7 +174,7 @@ import os
 # IMPORTANT: uploaded file path
 # (developer provided). We include it as-is.
 # -----------------------------
-IMAGE_URL = "/mnt/data/39b686f2-0f71-4dbc-92db-b9c0c12e4135.png"
+# IMAGE_URL = "/mnt/data/39b686f2-0f71-4dbc-92db-b9c0c12e4135.png"
 
 # ---------------------------------------------------------
 # 1. PAGE SETTINGS
@@ -350,4 +350,4 @@ with col_right:
 # Footer - developer note
 # ---------------------------------------------------------
 st.markdown("---")
-st.caption("Developer note: Model file is loaded (if present) but intentionally not used. The prediction is fully rule-based.")
+# st.caption("Developer note: Model file is loaded (if present) but intentionally not used. The prediction is fully rule-based.")
