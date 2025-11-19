@@ -10,7 +10,7 @@ __pycache__/
 .ipynb_checkpoints/
 
 # Model files
-*.pkl
+
 
 # IDE and editor files
 .vscode/
