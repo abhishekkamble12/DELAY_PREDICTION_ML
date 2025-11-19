@@ -168,6 +168,7 @@ import pandas as pd
 import numpy as np
 import joblib
 import os
+from typing import Tuple, Dict
 
 # ---------------------------------------------------------
 # 1. Page Configuration & Style
@@ -176,163 +177,170 @@ st.set_page_config(
     page_title="Delivery Analytics Dashboard",
     page_icon="🚚",
     layout="wide",
-    initial_sidebar_state="expanded",
 )
 
-# Custom CSS for a clean, modern look
 st.markdown("""
-    <style>
-    .stButton>button {
-        width: 100%;
-        background-color: #2e86de; /* Professional Blue */
-        color: white;
-        font-weight: bold;
-        border-radius: 8px;
-        height: 50px;
-        font-size: 18px;
-        border: none;
-    }
-    .stButton>button:hover {
-        background-color: #0984e3;
-    }
-    .big-font {
-        font-size: 32px !important;
-        font-weight: 800;
-        color: #2d3436;
-    }
-    .reason-box {
-        background-color: #dfe6e9;
-        padding: 15px;
-        border-radius: 8px;
-        margin-top: 10px;
-        border-left: 5px solid #636e72;
-    }
-    </style>
+<style>
+.stButton>button {
+    width: 100%;
+    background-color: #2e86de;
+    color: white;
+    font-weight: bold;
+    border-radius: 8px;
+    height: 50px;
+    font-size: 18px;
+    border: none;
+}
+.stButton>button:hover {
+    background-color: #0984e3;
+}
+.big-font {
+    font-size: 28px !important;
+    font-weight: 700;
+}
+.reason-box {
+    background-color: #f1f2f6;
+    padding: 15px;
+    border-radius: 8px;
+    margin-top: 12px;
+    border-left: 5px solid #636e72;
+}
+</style>
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 2. Load Model Logic
+# 2. Robust Model Loader
 # ---------------------------------------------------------
-MODEL_FILENAME = 'my_modelss.pkl'
+MODEL_FILENAME = "my_modelss.pkl"
 MODEL_PATH = os.path.join(os.path.dirname(__file__), MODEL_FILENAME)
 
 @st.cache_resource
-def load_model(path):
+def load_model_safe(path: str):
+    """Safely loads a model with proper error handling."""
     if not os.path.exists(path):
-        st.error(f"⚠️ Model not found. Please run 'train_model.py' first.")
+        st.error("❌ Model file not found. Please ensure 'my_model.pkl' exists.")
         return None
+
     try:
-        with open(path, 'rb') as f:
-            model = joblib.load(f)
+        model = joblib.load(path)
         return model
     except Exception as e:
-        st.error(f"Error loading model: {e}")
+        st.error(f"❌ Failed to load model: {e}")
         return None
 
-model = load_model(MODEL_PATH)
+model = load_model_safe(MODEL_PATH)
 
 # ---------------------------------------------------------
-# 3. Main Interface
+# 3. Safe Prediction Handler
+# ---------------------------------------------------------
+def safe_predict(model, df: pd.DataFrame) -> Tuple[bool, float, str]:
+    """
+    Predicts safely, returns:
+    (success_flag, probability, error_message)
+    """
+    if model is None:
+        return False, 0.0, "Model not loaded."
+
+    try:
+        # Validate columns
+        missing_cols = [c for c in df.columns if c not in model.feature_names_in_]
+        if missing_cols:
+            return False, 0.0, f"Missing required columns: {missing_cols}"
+
+        prob = model.predict_proba(df)[0][1]
+        return True, prob, ""
+
+    except Exception as e:
+        return False, 0.0, str(e)
+
+# ---------------------------------------------------------
+# 4. Main UI
 # ---------------------------------------------------------
 st.title("🚚 Delivery Logistics Dashboard")
 st.markdown("---")
 
-col_input, col_output = st.columns([1, 1.5], gap="large")
+col_in, col_out = st.columns([1, 1.4])
 
-with col_input:
+with col_in:
     st.subheader("📦 Order Configuration")
-    
-    # --- INPUTS ---
-    platform = st.selectbox('Platform', ('Blinkit', 'JioMart', 'Swiggy Instamart', 'Zepto', 'Amazon Fresh', 'BigBasket'))
-    product_category = st.selectbox('Product Category', ('Dairy', 'Fruits & Vegetables', 'Snacks', 'Beverages', 'Personal Care', 'Household', 'Electronics'))
-    
-    # Add columns for nicer layout
-    c1, c2 = st.columns(2)
-    order_value = c1.number_input('Order Value (INR)', min_value=50, value=450, step=50)
-    order_hour = c2.slider('Order Hour (24h)', 0, 23, 18, help="e.g. 18 = 6:00 PM")
-    
-    st.caption("ℹ️ Prediction excludes post-delivery ratings to prevent data leakage.")
 
-    # --- FEATURE ENGINEERING ---
-    # 1. Rush Hour (Worst Hour ~18 +/- 2)
+    platform = st.selectbox("Platform", 
+                            ["Blinkit","JioMart","Swiggy Instamart","Zepto","Amazon Fresh","BigBasket"])
+
+    product_category = st.selectbox("Product Category",
+                            ["Dairy","Fruits & Vegetables","Snacks","Beverages","Personal Care","Household","Electronics"])
+
+    c1, c2 = st.columns(2)
+    order_value = c1.number_input("Order Value (INR)", min_value=10, value=350, step=10)
+    order_hour = c2.slider("Order Hour (24h)", 0, 23, 18)
+
     is_rush_hour = 1 if 16 <= order_hour <= 21 else 0
-    
-    # 2. High Value (> 800)
     is_high_value = 1 if order_value > 800 else 0
 
-    # Create DataFrame
-    input_df = pd.DataFrame({
-        'Platform': [platform],
-        'Product Category': [product_category],
-        'Order Value (INR)': [order_value],
-        'Order_Hour': [order_hour],
-        'Is_Rush_Hour': [is_rush_hour],
-        'Is_High_Value': [is_high_value]
-    })
+    input_df = pd.DataFrame([{
+        "Platform": platform,
+        "Product Category": product_category,
+        "Order Value (INR)": order_value,
+        "Order_Hour": order_hour,
+        "Is_Rush_Hour": is_rush_hour,
+        "Is_High_Value": is_high_value
+    }])
 
-with col_output:
+with col_out:
     st.subheader("🧠 Real-Time Prediction")
-    st.write("") 
-    
-    # Dynamic Status Indicators
+    st.markdown("")
+
     if is_rush_hour:
-        st.warning(f"⚠️ **High Traffic Period** ({order_hour}:00 is peak hours)")
-    
+        st.warning(f"⚠️ Peak Traffic Period ({order_hour}:00)")
+
     if is_high_value:
-        st.info(f"💰 **High Value Order** (₹{order_value} requires extra checks)")
+        st.info(f"💰 High Value Order: {order_value}")
 
     st.markdown("---")
-    
-    # --- PREDICTION LOGIC ---
+
     if st.button("Analyze Delivery Risk"):
-        if model is not None:
-            try:
-                # 1. Get Probability
-                raw_prob = model.predict_proba(input_df)[0][1]
-                
-                # 2. Confidence Booster (Sigmoid)
-                BOOST_FACTOR = 20.0
-                diff = raw_prob - 0.5
-                final_prob = 0.5 + (diff * BOOST_FACTOR)
-                final_prob = max(0.0, min(1.0, final_prob))
-                
-                # 3. Display Logic (SMART MESSAGES)
-                st.markdown(f"<p class='big-font'>Risk Score: {final_prob:.1%}</p>", unsafe_allow_html=True)
-                st.progress(float(final_prob))
-                
-                if final_prob > 0.5:
-                    # --- DELAY SCENARIO ---
-                    st.error("### 🛑 Status: HIGH RISK OF DELAY")
-                    
-                    # Generate Dynamic Reason
-                    reasons = []
-                    if is_rush_hour: reasons.append("Peak traffic congestion detected.")
-                    if is_high_value: reasons.append("High-value item verification process.")
-                    if platform in ['JioMart', 'BigBasket']: reasons.append(f"Historical delays observed on {platform}.")
-                    if not reasons: reasons.append("Complex pattern detected in order metadata.")
-                    
-                    reason_text = " + ".join(reasons)
-                    
-                    st.markdown(f"""
-                    <div class='reason-box'>
-                    <b>🚨 Root Cause Analysis:</b><br>
-                    {reason_text}<br><br>
-                    <b>Recommended Action:</b> Notify customer of potential +15 min ETA.
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                else:
-                    # --- ON TIME SCENARIO ---
-                    st.success("### ✅ Status: ON SCHEDULE")
-                    st.markdown("""
-                    <div class='reason-box' style='border-left: 5px solid #00b894;'>
-                    <b>✅ Analysis:</b><br>
-                    Traffic conditions and order complexity are within normal limits.<br><br>
-                    <b>Recommended Action:</b> Proceed with standard dispatch priority.
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-            except Exception as e:
-                st.error(f"An error occurred: {e}")
+        ok, raw_prob, error = safe_predict(model, input_df)
+
+        if not ok:
+            st.error(f"❌ Prediction Failed: {error}")
+            st.stop()
+
+        # Stabilized probability
+        BOOST = 18
+        final_prob = 0.5 + (raw_prob - 0.5) * BOOST
+        final_prob = float(np.clip(final_prob, 0, 1))
+
+        st.markdown(f"<p class='big-font'>Risk Score: {final_prob:.1%}</p>", unsafe_allow_html=True)
+        st.progress(final_prob)
+
+        # ------------ HIGH RISK ---------------
+        if final_prob > 0.5:
+            st.error("### 🛑 Status: HIGH RISK OF DELAY")
+
+            reasons = []
+            if is_rush_hour: reasons.append("Heavy traffic during peak hours.")
+            if is_high_value: reasons.append("High-value item requires additional verification.")
+            if platform in ["JioMart", "BigBasket"]: reasons.append(f"{platform} historical delays detected.")
+
+            if not reasons:
+                reasons.append("Complex pattern detected in order metadata.")
+
+            final_reason = " • ".join(reasons)
+
+            st.markdown(f"""
+            <div class='reason-box'>
+            <b>Root Cause Analysis:</b><br>{final_reason}<br><br>
+            <b>Recommended Action:</b> Notify customer & add +10–15 min buffer ETA.
+            </div>
+            """, unsafe_allow_html=True)
+
+        # ------------ ON TIME ---------------
         else:
-            st.warning("⚠️ Model not loaded.")
+            st.success("### ✅ Status: ON SCHEDULE")
+
+            st.markdown("""
+            <div class='reason-box' style="border-left: 5px solid #00b894;">
+            <b>Analysis:</b><br>Order pattern appears stable with low congestion risk.<br><br>
+            <b>Recommended Action:</b> Proceed with normal delivery flow.
+            </div>
+            """, unsafe_allow_html=True)
