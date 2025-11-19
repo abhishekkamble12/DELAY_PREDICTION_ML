@@ -168,10 +168,9 @@ import pandas as pd
 import numpy as np
 import joblib
 import os
-from typing import Tuple, Dict
 
 # ---------------------------------------------------------
-# 1. Page Configuration & Style
+# 1. PAGE SETTINGS
 # ---------------------------------------------------------
 st.set_page_config(
     page_title="Delivery Analytics Dashboard",
@@ -179,6 +178,7 @@ st.set_page_config(
     layout="wide",
 )
 
+# Custom UI Styling
 st.markdown("""
 <style>
 .stButton>button {
@@ -209,16 +209,15 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 2. Robust Model Loader
+# 2. SAFE MODEL LOADER
 # ---------------------------------------------------------
 MODEL_FILENAME = "my_modelss.pkl"
 MODEL_PATH = os.path.join(os.path.dirname(__file__), MODEL_FILENAME)
 
 @st.cache_resource
-def load_model_safe(path: str):
-    """Safely loads a model with proper error handling."""
+def load_model_safe(path):
     if not os.path.exists(path):
-        st.error("❌ Model file not found. Please ensure 'my_model.pkl' exists.")
+        st.error("❌ Model file not found. Please place 'my_model.pkl' beside this file.")
         return None
 
     try:
@@ -228,52 +227,61 @@ def load_model_safe(path: str):
         st.error(f"❌ Failed to load model: {e}")
         return None
 
+
 model = load_model_safe(MODEL_PATH)
 
+
 # ---------------------------------------------------------
-# 3. Safe Prediction Handler
+# 3. SAFE PREDICTION WRAPPER
 # ---------------------------------------------------------
-def safe_predict(model, df: pd.DataFrame) -> Tuple[bool, float, str]:
+def safe_predict(model, input_df):
     """
-    Predicts safely, returns:
-    (success_flag, probability, error_message)
+    Returns (ok, prediction_probability, error_message)
     """
     if model is None:
         return False, 0.0, "Model not loaded."
 
     try:
-        # Validate columns
-        missing_cols = [c for c in df.columns if c not in model.feature_names_in_]
-        if missing_cols:
-            return False, 0.0, f"Missing required columns: {missing_cols}"
+        # Check column mismatch
+        missing = [c for c in model.feature_names_in_ if c not in input_df.columns]
+        if missing:
+            return False, 0.0, f"Missing columns required by model: {missing}"
 
-        prob = model.predict_proba(df)[0][1]
+        prob = model.predict_proba(input_df)[0][1]
         return True, prob, ""
-
     except Exception as e:
         return False, 0.0, str(e)
 
+
 # ---------------------------------------------------------
-# 4. Main UI
+# 4. UI LAYOUT
 # ---------------------------------------------------------
 st.title("🚚 Delivery Logistics Dashboard")
 st.markdown("---")
 
-col_in, col_out = st.columns([1, 1.4])
+col_left, col_right = st.columns([1, 1.4])
 
-with col_in:
+# ---------------------------------------------------------
+# 5. LEFT PANEL — INPUTS
+# ---------------------------------------------------------
+with col_left:
     st.subheader("📦 Order Configuration")
 
-    platform = st.selectbox("Platform", 
-                            ["Blinkit","JioMart","Swiggy Instamart","Zepto","Amazon Fresh","BigBasket"])
+    platform = st.selectbox(
+        "Platform",
+        ["Blinkit", "JioMart", "Swiggy Instamart", "Zepto", "Amazon Fresh", "BigBasket"]
+    )
 
-    product_category = st.selectbox("Product Category",
-                            ["Dairy","Fruits & Vegetables","Snacks","Beverages","Personal Care","Household","Electronics"])
+    product_category = st.selectbox(
+        "Product Category",
+        ["Dairy", "Fruits & Vegetables", "Snacks", "Beverages", "Personal Care", "Household", "Electronics"]
+    )
 
     c1, c2 = st.columns(2)
-    order_value = c1.number_input("Order Value (INR)", min_value=10, value=350, step=10)
+    order_value = c1.number_input("Order Value (INR)", min_value=10, value=300, step=10)
     order_hour = c2.slider("Order Hour (24h)", 0, 23, 18)
 
+    # Feature Engineering
     is_rush_hour = 1 if 16 <= order_hour <= 21 else 0
     is_high_value = 1 if order_value > 800 else 0
 
@@ -286,61 +294,82 @@ with col_in:
         "Is_High_Value": is_high_value
     }])
 
-with col_out:
+
+# ---------------------------------------------------------
+# 6. RIGHT PANEL — PREDICTION OUTPUT
+# ---------------------------------------------------------
+with col_right:
     st.subheader("🧠 Real-Time Prediction")
-    st.markdown("")
+    st.write("")
 
     if is_rush_hour:
         st.warning(f"⚠️ Peak Traffic Period ({order_hour}:00)")
 
     if is_high_value:
-        st.info(f"💰 High Value Order: {order_value}")
+        st.info(f"💰 High Value Order: ₹{order_value}")
 
     st.markdown("---")
 
+    # ---------------------------------------------------------
+    # PREDICTION BUTTON
+    # ---------------------------------------------------------
     if st.button("Analyze Delivery Risk"):
         ok, raw_prob, error = safe_predict(model, input_df)
 
         if not ok:
-            st.error(f"❌ Prediction Failed: {error}")
+            st.error(f"❌ Prediction failed: {error}")
             st.stop()
 
-        # Stabilized probability
-        BOOST = 18
-        final_prob = 0.5 + (raw_prob - 0.5) * BOOST
-        final_prob = float(np.clip(final_prob, 0, 1))
+        # ---------------------------------------------------------
+        # FIXED HYBRID RISK MODEL
+        # ---------------------------------------------------------
+        risk = raw_prob  # base ML prediction
 
-        st.markdown(f"<p class='big-font'>Risk Score: {final_prob:.1%}</p>", unsafe_allow_html=True)
-        st.progress(final_prob)
+        # Rule-based adjustments
+        if is_rush_hour:
+            risk += 0.12       # +12% risk
+        if is_high_value:
+            risk += 0.08       # +8% risk
+        if platform in ["JioMart", "BigBasket"]:
+            risk += 0.05       # +5% historical delays
 
-        # ------------ HIGH RISK ---------------
-        if final_prob > 0.5:
+        # Ensure within bounds
+        risk = float(np.clip(risk, 0, 1))
+
+        # Display Risk Score
+        st.markdown(f"<p class='big-font'>Risk Score: {risk:.1%}</p>", unsafe_allow_html=True)
+        st.progress(risk)
+
+        # ---------------------------------------------------------
+        # HIGH RISK OUTPUT
+        # ---------------------------------------------------------
+        if risk > 0.5:
             st.error("### 🛑 Status: HIGH RISK OF DELAY")
 
             reasons = []
-            if is_rush_hour: reasons.append("Heavy traffic during peak hours.")
-            if is_high_value: reasons.append("High-value item requires additional verification.")
-            if platform in ["JioMart", "BigBasket"]: reasons.append(f"{platform} historical delays detected.")
+            if is_rush_hour: reasons.append("Peak hour traffic congestion.")
+            if is_high_value: reasons.append("High-value order verification.")
+            if platform in ["JioMart", "BigBasket"]: reasons.append("Historical delay patterns.")
+            if not reasons: reasons.append("Complex risk pattern detected by model.")
 
-            if not reasons:
-                reasons.append("Complex pattern detected in order metadata.")
-
-            final_reason = " • ".join(reasons)
+            reason_text = " • ".join(reasons)
 
             st.markdown(f"""
             <div class='reason-box'>
-            <b>Root Cause Analysis:</b><br>{final_reason}<br><br>
-            <b>Recommended Action:</b> Notify customer & add +10–15 min buffer ETA.
+                <b>Root Cause Analysis:</b><br>{reason_text}<br><br>
+                <b>Recommended Action:</b> Notify customer & add +10–15 mins buffer.
             </div>
             """, unsafe_allow_html=True)
 
-        # ------------ ON TIME ---------------
+        # ---------------------------------------------------------
+        # ON TIME OUTPUT
+        # ---------------------------------------------------------
         else:
             st.success("### ✅ Status: ON SCHEDULE")
 
             st.markdown("""
-            <div class='reason-box' style="border-left: 5px solid #00b894;">
-            <b>Analysis:</b><br>Order pattern appears stable with low congestion risk.<br><br>
-            <b>Recommended Action:</b> Proceed with normal delivery flow.
+            <div class='reason-box' style='border-left: 5px solid #00b894;'>
+                <b>Analysis:</b><br>Traffic & order complexity appear normal.<br><br>
+                <b>Recommended Action:</b> Proceed with standard delivery workflow.
             </div>
             """, unsafe_allow_html=True)
