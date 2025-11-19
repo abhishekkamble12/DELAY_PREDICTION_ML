@@ -245,7 +245,7 @@ with col_left:
     c1, c2 = st.columns(2)
     order_value = c1.number_input("Order Value (INR)", min_value=10, value=350, step=10)
     order_hour = c2.slider("Order Hour (24h)", 0, 23, 18)
-    st.caption("Note: The ML model (if present) is loaded but intentionally not used for prediction here.")
+    
 
 # ---------------------------------------------------------
 # 5. Rule-based delay logic (final decision depends on
